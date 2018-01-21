@@ -114,6 +114,10 @@ class ProjectsTable extends Table
             ->allowEmpty('active');
 
         $validator
+            ->boolean('closed')
+            ->allowEmpty('closed');
+
+        $validator
             ->integer('daystounfollow')
             ->allowEmpty('daystounfollow');
 

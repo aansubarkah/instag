@@ -18,6 +18,7 @@ use Cake\ORM\Entity;
  * @property \Cake\I18n\FrozenTime $modified
  * @property bool $status
  * @property bool $active
+ * @property bool $closed
  * @property int $daystounfollow
  * @property int $unliketoban
  * @property bool $followbyhashtag
@@ -68,6 +69,7 @@ class Project extends Entity
         'modified' => true,
         'status' => true,
         'active' => true,
+        'closed' => true,
         'daystounfollow' => true,
         'unliketoban' => true,
         'followbyhashtag' => true,
