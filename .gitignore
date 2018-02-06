@@ -6,6 +6,8 @@
 /tmp/*
 /vendor/*
 /webroot/api.txt
+/webroot/classifiers/*
+miyazghayda_*
 #/src/Shell/*
 
 # OS generated files #
