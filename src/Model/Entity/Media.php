@@ -17,6 +17,7 @@ use Cake\ORM\Entity;
  * @property bool $active
  *
  * @property \App\Model\Entity\Post $post
+ * @property \App\Model\Entity\Type $type
  */
 class Media extends Entity
 {
@@ -39,6 +40,7 @@ class Media extends Entity
         'modified' => true,
         'category' => true,
         'active' => true,
-        'post' => true
+        'post' => true,
+        'type' => true
     ];
 }

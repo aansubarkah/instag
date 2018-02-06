@@ -41,7 +41,8 @@ class TargetsTable extends Table
         parent::initialize($config);
 
         $this->setTable('targets');
-
+        $this->setDisplayField('username');
+        $this->setPrimaryKey('id');
         $this->addBehavior('Timestamp');
 
         $this->belongsTo('Users', [

@@ -102,6 +102,10 @@ class PostsTable extends Table
             ->boolean('active')
             ->allowEmpty('active');
 
+        $validator
+            ->string('sourceid')
+            ->allowEmpty('souceid');
+
         return $validator;
     }
 

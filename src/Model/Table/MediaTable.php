@@ -10,6 +10,7 @@ use Cake\Validation\Validator;
  * Media Model
  *
  * @property \App\Model\Table\PostsTable|\Cake\ORM\Association\BelongsTo $Posts
+ * @property \App\Model\Table\TypesTable|Cake\ORM\Association\BelongsTo $Types
  *
  * @method \App\Model\Entity\Media get($primaryKey, $options = [])
  * @method \App\Model\Entity\Media newEntity($data = null, array $options = [])
@@ -42,6 +43,10 @@ class MediaTable extends Table
 
         $this->belongsTo('Posts', [
             'foreignKey' => 'post_id'
+        ]);
+
+        $this->belongsTo('Types', [
+            'foreignKey' => 'type_id'
         ]);
     }
 
@@ -89,6 +94,7 @@ class MediaTable extends Table
     public function buildRules(RulesChecker $rules)
     {
         $rules->add($rules->existsIn(['post_id'], 'Posts'));
+        $rules->add($rules->existsIn(['type_id'], 'Types'));
 
         return $rules;
     }

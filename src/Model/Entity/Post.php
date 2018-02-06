@@ -13,6 +13,7 @@ use Cake\ORM\Entity;
  * @property float $lat
  * @property float $lng
  * @property int $takenat
+ * @property string $sourceid
  * @property \Cake\I18n\FrozenTime $created
  * @property \Cake\I18n\FrozenTime $modified
  * @property bool $active
@@ -48,6 +49,7 @@ class Post extends Entity
         'created' => true,
         'modified' => true,
         'active' => true,
+        'sourceid' => true,
         'account' => true,
         'location' => true,
         'loves' => true,

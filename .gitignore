@@ -5,6 +5,8 @@
 /logs/*
 /tmp/*
 /vendor/*
+/webroot/api.txt
+#/src/Shell/*
 
 # OS generated files #
 ######################
