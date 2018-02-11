@@ -347,6 +347,185 @@ class TestShell extends Shell
         }
     }
 
+    public function unliking($accountUsername = null)
+    {
+        if ($accountUsername == null) {
+            $projects = $this->Projects->find('all', [
+                'conditions' => [
+                    'Projects.active' => true,
+                    'Projects.status' => true
+                ],
+                'contain' => ['Proxies', 'Accounts']
+            ]);
+        } else {
+            $projects = $this->Projects->find('all', [
+                'conditions' => [
+                    'Accounts.username' => $accountUsername
+                ],
+                'contain' => ['Proxies', 'Accounts']
+            ]);
+        }
+        foreach ($projects as $project) {
+            echo 'Check Unliking by ' . $project->name . PHP_EOL;
+            $query = $this->Likes->find('all', [
+                'conditions' => [
+                    'account_id' => $project->account->id,
+                    'DATE(created)' => date('Y-m-d'),
+                    'active' => true
+                ]
+            ]);
+            $likeCount = $query->count();
+            echo 'Like(s) today ' . $likeCount . PHP_EOL;
+            if ($likeCount > 0) {
+                try {
+                    $ig = new Instagram();
+                    if ($project['proxy_id'] > 1) {
+                        $ig->setProxy('http://' . $project->proxy->name);
+                    }
+                    try {
+                        $ig->login($project->account->username, $project->account->password);
+                    } catch (Exception $e) {// try to login to ig
+                        $this->out($e);
+                    }
+                } catch (Exception $e) {// try process to ig
+                    $this->out($e);
+                }
+                $maxId = null;
+                $likesCounter = 0;
+                $likesPk = [];
+                do {
+                    $feed = $ig->media->getLikedFeed($maxId);
+                    $maxId = $feed->next_max_id;
+                    $likesCounter += (int)$feed->num_results;
+                    for ($i = 0; $i < $feed->num_results; $i++) {
+                        $data = $feed->items[$i];
+                        if (!in_array($data->pk, $likesPk)) array_push($likesPk, $data->pk);
+                        //print_r($data['image_versions2']['candidates'][0]['url']);
+                        echo $data->image_versions2->candidates[0]->url;
+                        echo PHP_EOL;
+                    }// foreach medias liked
+                    if ($likesCounter >= $likeCount) $maxId = null;// stop process if all today's like(s) has been downloaded
+                    $this->sleep10();
+                } while ($maxId !== null);
+                // Update all today's like
+                $query = $this->Likes->updateAll(
+                    [// fields
+                        'unlike' => true
+                    ],
+                    [// conditions
+                        'account_id' => $project->account->id,
+                        'DATE(created)' => date('Y-m-d'),
+                        'active' => true
+                    ]
+                );
+                foreach ($likesPk as $like) {
+                    $post_id = 0;
+                    $query = $this->Posts->find('all', [
+                        'conditions' => [
+                            'pk' => $like
+                        ]
+                    ]);
+                    if ($query->count() > 0) {
+                        $post = $query->first();
+                        $post_id = $post->id;
+                        $queryUpdate = $this->Likes->query();
+                        $queryUpdate->update()
+                                    ->set(['unlike' => false])
+                                    ->where(['post_id' => $post_id, 'account_id' => $project->account->id, 'active' => true])
+                                    ->execute();
+                    }
+                }
+            }// likeCount > 0
+            $this->blacklistingbyhashtag($project->account->username);
+        }// foreach projects
+    }
+
+    private function blacklistingbyhashtag($accountUsername = null)
+    {
+        if ($accountUsername == null) {
+            $projects = $this->Projects->find('all', [
+                'conditions' => [
+                    'Projects.active' => true,
+                    'Projects.status' => true
+                ],
+                'contain' => ['Proxies', 'Accounts']
+            ]);
+        } else {
+            $projects = $this->Projects->find('all', [
+                'conditions' => [
+                    'Accounts.username' => $accountUsername
+                ],
+                'contain' => ['Proxies', 'Accounts']
+            ]);
+        }
+        foreach ($projects as $project) {
+            $query = $this->Loves->find();
+            $query->where([
+                'account_id' => $project->account->id,
+                'unlike'=> true,
+                'active' => true
+            ])
+                  ->select([
+                  'target_id' => 'target_id'
+              ])
+              ->group('target_id HAVING COUNT(Loves.target_id) > 1');
+            $data = $query->all();
+            $i = 1;
+            foreach ($data as $d) {
+                echo $i . ' ' . $d->target_id . PHP_EOL;
+                $i++;
+                $this->getInsertAccountlist($d->target_id, $project->id, false, false, false, 0);
+            }
+        }// foreach projects
+    }
+
+    private function getInsertAccountlist($account_id = 0, $project_id = 0, $which = false,
+        $idol = false, $vip = false, $nextmaxid = 0)
+    {
+        $account_id = (int)$account_id;
+        $project_id = (int)$project_id;
+        $accountlist = $this->Accountlists->find('all', [
+            'conditions' => [
+                'account_id' => $account_id,
+                'project_id' => $project_id,
+                'which' => $which,
+                'idol' => $idol,
+                'vip' => $vip,
+                'active' => true
+            ]
+        ]);
+        if ($accountlist->count() > 0) {
+            $ret = $accountlist->first();
+            return $ret['id'];
+        } else {
+            $query = $this->Accountlists->query();
+            $query->insert(['account_id', 'project_id', 'which', 'idol', 'vip', 'nextmaxid', 'created', 'modified', 'active'])
+                  ->values([
+                  'account_id' => $account_id,
+                  'project_id' => $project_id,
+                  'which' => $which,
+                  'idol' => $idol,
+                  'vip' => $vip,
+                  'nextmaxid' => $nextmaxid,
+                  'created' => Time::now(),
+                  'modified' => Time::now(),
+                  'active' => true
+
+              ])
+              ->execute();
+            $ret = $this->Accountlists->find('all', [
+                'account_id' => $account_id,
+                'project_id' => $project_id,
+                'which' => $which,
+                'idol' => $idol,
+                'vip' => $vip,
+                'active' => true
+            ])->first();
+            return $ret->id;
+        }
+
+    }
+
     public function likinghashtag($accountUsername = null)
     {
         if ($accountUsername == null) {
@@ -450,7 +629,7 @@ class TestShell extends Shell
                         //if ($feed->more_available) {
                         $maxId = $feed->next_max_id;
                         //} else {
-                            //$maxId = null;
+                        //$maxId = null;
                         //}
                         //$maxId = $feed->next_max_id;
                         //echo $maxId . PHP_EOL;
