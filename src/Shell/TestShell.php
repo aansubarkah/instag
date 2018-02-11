@@ -37,6 +37,9 @@ class TestShell extends Shell
     public $Comments;
     public $Vassals;
     public $Types;
+    public $Followers;
+    public $Henchmans;
+    public $Fans;
     public $Telegram;
     public $Table;
     public $Tokenizer;
@@ -61,6 +64,9 @@ class TestShell extends Shell
         $this->Comments = $this->loadModel('Comments');
         $this->Vassals = $this->loadModel('Vassals');
         $this->Types = $this->loadModel('Types');
+        $this->Followers = $this->loadModel('Followers');
+        $this->Henchmans = $this->loadModel('Henchmans');
+        $this->Fans = $this->loadModel('Fans');
         $this->Telegram = new Api('539549347:AAEk1Le8tsc-KvjqKcIrm2RiQ7j2MLO5Yb4');
         $this->Table = new ConsoleTable();
         $this->Tokenizer = new WhitespaceTokenizer();
@@ -347,6 +353,83 @@ class TestShell extends Shell
         }
     }
 
+    public function unfollowing($accountUsername = null)
+    {
+        if ($accountUsername == null) {
+            $projects = $this->Projects->find('all', [
+                'conditions' => [
+                    'Projects.active' => true,
+                    'Projects.status' => true,
+                    'OR' => [
+                        ['Projects.followbyhashtag' => true],
+                        ['Projects.followbyidol' => true],
+                        ['Projects.followbycomment' => true]
+                    ]
+                ],
+                'contain' => ['Proxies', 'Accounts']
+            ]);
+        } else {
+            $projects = $this->Projects->find('all', [
+                'conditions' => [
+                    'Accounts.username' => $accountUsername
+                ],
+                'contain' => ['Proxies', 'Accounts']
+            ]);
+        }
+        foreach ($projects as $project) {
+            echo "Unfollowing " . $project->name . "'s follower(s)" . PHP_EOL;
+            $query = $this->Henchmans->find('all', [
+                'conditions' => [
+                    'account_id' => $project->account->id,
+                    'unfollow' => false,
+                    'who' => false,
+                    'active' => true
+                ],
+                'limit' => 60,
+                'order' => ['id' => 'ASC']
+            ]);
+            if ($query->count() > 0) {
+                $followings = $query->all();
+                try {
+                    $ig = new Instagram();
+                    if ($project['proxy_id'] > 1) {
+                        $ig->setProxy('http://' . $project->proxy->name);
+                    }
+                    try {
+                        $ig->login($project->account->username, $project->account->password);
+                    } catch (Exception $e) {// try to login to ig
+                        $this->out($e);
+                    }
+                    $i = 1;
+                    foreach($followings as $following) {
+                        try {
+                            echo $i . ' Unfollow ' . $following->target_username . PHP_EOL;
+                            $i++;
+                            $response = $ig->people->unfollow($following->target_pk);
+                            //print_r($response);
+                            echo $response->status . PHP_EOL;
+                            if ($response->status == 'ok') {
+                                $query = $this->Followers->query();
+                                $query->update()
+                                      ->set([
+                                      'unfollow' => true,
+                                      'modified' => Time::now()
+                                  ])
+                                  ->where(['id' => $following->id])
+                                  ->execute();
+                            }
+                        } catch (Exception $e) {// try to unfollow
+                            $this->out($e);
+                        }
+                        $this->sleep10();
+                    }// foreach followings
+                } catch (Exception $e) {// try process to ig
+                    $this->out($e);
+                }
+            }// query > 0
+        }// foreach projects
+    }
+
     public function unliking($accountUsername = null)
     {
         if ($accountUsername == null) {
@@ -378,6 +461,9 @@ class TestShell extends Shell
             $likeCount = $likeCount * 3;
             echo 'Like(s) today ' . $likeCount . PHP_EOL;
             if ($likeCount > 0) {
+                $likesPk = [];
+                $maxId = null;
+                $likesCounter = 0;
                 try {
                     $ig = new Instagram();
                     if ($project['proxy_id'] > 1) {
@@ -388,26 +474,20 @@ class TestShell extends Shell
                     } catch (Exception $e) {// try to login to ig
                         $this->out($e);
                     }
+                    do {
+                        $feed = $ig->media->getLikedFeed($maxId);
+                        $maxId = $feed->next_max_id;
+                        $likesCounter += (int)$feed->num_results;
+                        for ($i = 0; $i < $feed->num_results; $i++) {
+                            $data = $feed->items[$i];
+                            if (!in_array($data->pk, $likesPk)) array_push($likesPk, $data->pk);
+                        }// foreach medias liked
+                        if ($likesCounter >= $likeCount) $maxId = null;// stop process if all today's like(s) has been downloaded
+                        $this->sleep10();
+                    } while ($maxId !== null);
                 } catch (Exception $e) {// try process to ig
                     $this->out($e);
                 }
-                $maxId = null;
-                $likesCounter = 0;
-                $likesPk = [];
-                do {
-                    $feed = $ig->media->getLikedFeed($maxId);
-                    $maxId = $feed->next_max_id;
-                    $likesCounter += (int)$feed->num_results;
-                    for ($i = 0; $i < $feed->num_results; $i++) {
-                        $data = $feed->items[$i];
-                        if (!in_array($data->pk, $likesPk)) array_push($likesPk, $data->pk);
-                        //print_r($data['image_versions2']['candidates'][0]['url']);
-                        //echo $data->image_versions2->candidates[0]->url;
-                        //echo PHP_EOL;
-                    }// foreach medias liked
-                    if ($likesCounter >= $likeCount) $maxId = null;// stop process if all today's like(s) has been downloaded
-                    $this->sleep10();
-                } while ($maxId !== null);
                 // Update all today's like
                 $query = $this->Likes->updateAll(
                     [// fields
@@ -471,10 +551,10 @@ class TestShell extends Shell
               ])
               ->group('target_id HAVING COUNT(Loves.target_id) > 1');
             $data = $query->all();
-            $i = 1;
+            //$i = 1;
             foreach ($data as $d) {
-                echo $i . ' ' . $d->target_id . PHP_EOL;
-                $i++;
+                //echo $i . ' ' . $d->target_id . PHP_EOL;
+                //$i++;
                 $this->getInsertAccountlist($d->target_id, $project->id, false, false, false, 0);
             }
         }// foreach projects
@@ -797,6 +877,7 @@ class TestShell extends Shell
                                         'conditions' => [
                                             'Comments.account_id' => $project->account->id,
                                             'Comments.post_id' => $post_id,
+                                            'Comments.caption' => false,
                                             'Comments.active' => true
                                         ]
                                     ]);
