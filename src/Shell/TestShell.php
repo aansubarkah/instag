@@ -375,6 +375,7 @@ class TestShell extends Shell
                 ]
             ]);
             $likeCount = $query->count();
+            $likeCount = $likeCount * 3;
             echo 'Like(s) today ' . $likeCount . PHP_EOL;
             if ($likeCount > 0) {
                 try {
@@ -401,8 +402,8 @@ class TestShell extends Shell
                         $data = $feed->items[$i];
                         if (!in_array($data->pk, $likesPk)) array_push($likesPk, $data->pk);
                         //print_r($data['image_versions2']['candidates'][0]['url']);
-                        echo $data->image_versions2->candidates[0]->url;
-                        echo PHP_EOL;
+                        //echo $data->image_versions2->candidates[0]->url;
+                        //echo PHP_EOL;
                     }// foreach medias liked
                     if ($likesCounter >= $likeCount) $maxId = null;// stop process if all today's like(s) has been downloaded
                     $this->sleep10();
