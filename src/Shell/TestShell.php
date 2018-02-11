@@ -7,6 +7,7 @@ use Cake\I18n\Date;
 use Cake\I18n\Time;
 use Cake\Datasource\ConnectionManager;
 use InstagramAPI\Instagram;
+use InstagramAPI\Signatures;
 use Telegram\Bot\Api;
 use LucidFrame\Console\ConsoleTable;
 use NlpTools\Tokenizers\WhitespaceTokenizer;
@@ -421,13 +422,14 @@ class TestShell extends Shell
                 ]
             ]);
             $likeCount = $query->count();
+            echo 'Like(s) today ' . $likeCount . PHP_EOL;
             $likeMax = $project->maximumlike;
             $maximumLikePerBatch = 60;
+            $likeThisBatch = 0;
             $likePerHashtag = floor(60 / $hashtagWhitelistCount);
 
             try {
                 $ig = new Instagram();
-                //$ig->login($project->account->username, $project->account->password);
                 if ($project['proxy_id'] > 1) {
                     $ig->setProxy('http://' . $project->proxy->name);
                 }
@@ -439,11 +441,19 @@ class TestShell extends Shell
 
                 foreach ($hashtagWhitelist as $hashtagWhite) {
                     echo 'hashtag ' . $hashtagWhite . PHP_EOL;
+                    $rankToken = null;
                     $maxId = null;
                     $hashtagCounter = 1;
+                    $overallCounter = 1;
                     do {
-                        $feed = $ig->hashtag->getFeed($hashtagWhite);
+                        $feed = $ig->hashtag->getFeed($hashtagWhite, $rankToken, $maxId);
+                        //if ($feed->more_available) {
                         $maxId = $feed->next_max_id;
+                        //} else {
+                            //$maxId = null;
+                        //}
+                        //$maxId = $feed->next_max_id;
+                        //echo $maxId . PHP_EOL;
                         //$filename = $project->account->username . '_' . $hashtagWhite . '_' . $hashtagCounter . '.json';
                         //$this->createFile($filename, json_encode($feed, JSON_PRETTY_PRINT));
                         for ($i = 0; $i < $feed->num_results; $i++) {
@@ -451,25 +461,42 @@ class TestShell extends Shell
                             $process = true;
 
                             // Check if account never like this post
-                            $query = $this->Likes->find('all', [
+                            /*$query = $this->Likes->find('all', [
                                 'conditions' => [
                                     'Likes.account_id' => $project->account->id,
                                     'Likes.active' => true,
                                     'Posts.pk' => $data->pk
                                 ],
                                 'contain' => ['Posts']
+                            ]);*/
+                            $query = $this->Loves->find('all', [
+                                'conditions' => [
+                                    'Loves.account_id' => $project->account->id,
+                                    'Loves.active' => true,
+                                    'Loves.post_pk' => $data->pk
+                                ]
                             ]);
-                            if ($query->count() > 0) $process = false;
+                            if ($query->count() > 0) {
+                                $process = false;
+                                //echo $overallCounter . ' Post has liked before, PK ' . $data->pk . PHP_EOL;
+                            }
 
                             // Check if blacklist hashtags exists
                             $caption = '';
                             if (isset($data->caption->text)) $caption = $this->textCleaning($data->caption->text);
                             foreach ($hashtagBlacklist as $hashtagBlack) {
-                                if (strpos($caption, $hashtagBlack) !== false) $process = false;
+                                if (strpos($caption, $hashtagBlack) !== false) {
+                                    $process = false;
+                                    //echo $overallCounter . ' Hashtag Blacklist (' . $hashtagBlack . ')' . PHP_EOL . $caption . PHP_EOL;
+                                }
                             }
 
                             // Check if blacklist target
-                            if (in_array($data->user->pk, $targetBlacklist)) $process = false;
+                            if (in_array($data->user->pk, $targetBlacklist)) {
+                                $process = false;
+                                //echo $overallCounter . ' Target Blacklist' . PHP_EOL;
+                                //echo $data->user->username . PHP_EOL;
+                            }
                             /*foreach ($targetBlacklist as $targetBlack) {
                                 if ($data->user->pk == $targetBlack) $process = false;
                             }*/
@@ -494,7 +521,11 @@ class TestShell extends Shell
                                 ['spam', 'ham'],
                                 new TokensDocument($tok->tokenize($caption))
                             );
-                            if ($prediction == 'spam') $process = false;
+                            if ($prediction == 'spam') {
+                                $process = false;
+                                echo $overallCounter . ' Caption SPAM' . PHP_EOL;
+                                //echo $caption . PHP_EOL;
+                            }
 
                             if ($process) {
                                 // Insert Location
@@ -581,26 +612,36 @@ class TestShell extends Shell
 
                                 // Commenting
                                 if ($project->commentbyhashtag && $data->location != null) {
-                                    $comment = $this->generateComment(
-                                        $account_name = $data->user->full_name,
-                                        $location_name = $data->location->name,
-                                        $location_shortname = $data->location->short_name,
-                                        $lat = $data->location->lat,
-                                        $lng = $data->location->lng
-                                    );
-                                    if ($comment != false) {
-                                        echo 'Commenting' . PHP_EOL;
-                                        $commentResponse = $ig->media->comment($data->id, $comment);
-                                        if ($commentResponse->isStatus()) {
-                                            // Insert Comment
-                                            $this->getInsertComment(
-                                                $post_id = $post_id,
-                                                $pk = 0,
-                                                $content = $comment,
-                                                $caption = false,
-                                                $account_id = $project->account->id,
-                                                $who = false
-                                            );
+                                    // Check if account never comment this post
+                                    $query = $this->Comments->find('all', [
+                                        'conditions' => [
+                                            'Comments.account_id' => $project->account->id,
+                                            'Comments.post_id' => $post_id,
+                                            'Comments.active' => true
+                                        ]
+                                    ]);
+                                    if ($query->count() < 1) {
+                                        $comment = $this->generateComment(
+                                            $account_name = $data->user->full_name,
+                                            $location_name = $data->location->name,
+                                            $location_shortname = $data->location->short_name,
+                                            $lat = $data->location->lat,
+                                            $lng = $data->location->lng
+                                        );
+                                        if ($comment != false) {
+                                            echo 'Commenting' . PHP_EOL;
+                                            $commentResponse = $ig->media->comment($data->id, $comment);
+                                            if ($commentResponse->isStatus()) {
+                                                // Insert Comment
+                                                $this->getInsertComment(
+                                                    $post_id = $post_id,
+                                                    $pk = 0,
+                                                    $content = $comment,
+                                                    $caption = false,
+                                                    $account_id = $project->account->id,
+                                                    $who = false
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -608,12 +649,16 @@ class TestShell extends Shell
                                 //echo PHP_EOL;
                                 $likeCount++; // counter all like per day
                                 $hashtagCounter++; // counter each hashtag
+                                $likeThisBatch++; // counter like per batch
                             }
+                            $overallCounter++;
                         }
 
                         if ($likeCount >= $likeMax) $maxId = null;
                         if ($hashtagCounter >= $likePerHashtag) $maxId = null;
+                        if ($likeThisBatch >= $maximumLikePerBatch) $maxId = null;
                         $this->sleep10();
+                        //$overallCounter++;
                     } while ($maxId !== null);
                 }
             } catch (Exception $e) {
@@ -624,8 +669,18 @@ class TestShell extends Shell
 
     private function textCleaning($text = null)
     {
-        $ret = preg_replace("/(\W)+/", " ", $text);
-        return strtolower($ret);
+        $text = strtolower($text);
+        // remove url
+        $ret = preg_replace('/\b((https?|ftp|file):\/\/|www\.)[-A-Z0-9+&@#\/%?=~_|$!:,.;]*[A-Z0-9+&@#\/%=~_|$]/i', ' ', $text);
+        // remove mention
+        $ret = preg_replace('/@([^@]+)/', ' ', $ret);
+        // remove non alphanumeric
+        //$ret = preg_replace("/(\W)+/", " ", $ret);
+        $ret = preg_replace('/[^A-Za-z0-9]/', ' ', $ret);
+        // remove extra spaces
+        $ret = preg_replace('/\s+/', ' ', $ret);
+        //echo $ret . PHP_EOL;
+        return $ret;
     }
 
     public function hashtag($username = null, $password = null)
@@ -808,6 +863,7 @@ class TestShell extends Shell
         $ret = false;
         $location_shortname = strtolower($location_shortname);
         $location_shortname = str_replace('indonesia', '', $location_shortname);
+        $location_shortname = str_replace('bersponsor', '', $location_shortname);
 
         if (!empty($location_shortname)) {
             $account_name = explode(' ', $account_name);

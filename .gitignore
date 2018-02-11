@@ -8,6 +8,7 @@
 /webroot/api.txt
 /webroot/classifiers/*
 miyazghayda_*
+upload.sh
 #/src/Shell/*
 
 # OS generated files #
